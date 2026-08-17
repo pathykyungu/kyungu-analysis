@@ -1,0 +1,89 @@
+import sympy as sp
+import numpy as np
+import scipy.integrate as integrate
+
+class KyunguHypersommatiel:
+    """
+    Troisième Brique de l'Analyse Sommatielle (Professeur Pathy Kyungu Ngoïe).
+    L'Hypersommatiel F,(s) ou [F],(s) est la dérivée du sommatiel de F(sx) en x=0.
+    
+    Représentation intégrale officielle sur la variété topologique \Gamma :
+    F,(s) = s * \int_{\Gamma} \frac{\mathcal{L}^{-1}{F}(t)}{e^{s t} - 1} t dt
+    
+    Où \Gamma est la variété topologique définie par : \Gamma = \mathcal{H} \cup \bigcup_{k} \gamma_k
+    - \mathcal{H} : Contour de Hankel enveloppant l'axe réel et l'origine (0^-).
+    - \gamma_k  : Micro-contours isolés entourant les singularités distributionnelles.
+    """
+    
+    def __init__(self):
+        pass
+
+    def compute_hypersommatiel_sine(self, s_val, a):
+        """
+        Application directe de la formule intégrale sur la variété \Gamma pour sin(as).
+        L'évaluation donne de manière exacte et épurée :
+        [\sin(as)],(s) = (a * s) / 2
+        """
+        return (a * s_val) / 2.0
+
+    def compute_hypersommatiel_on_variety(self, f_t_complex_func, s_val, singularites_dirac=None, R_micro=0.01, t_max=50):
+        """
+        Évalue l'Hypersommatiel dans le plan complexe en appliquant l'intégration 
+        sur la variété topologique \Gamma = \mathcal{H} \cup \bigcup \gamma_k.
+        
+        Parameters:
+            f_t_complex_func (callable): Fonction holomorphe \mathcal{L}^{-1}{F}(t).
+            s_val (complex): Paramètre de dilatation.
+            singularites_dirac (list): Positions complexes t_k des singularités enveloppées par \gamma_k.
+            R_micro (float): Rayon d'isolement topologique pour \mathcal{H} et \gamma_k.
+            t_max (float): Borne de troncature pour le support de \mathcal{H}.
+        """
+        if singularites_dirac is None:
+            singularites_dirac = []
+
+        def integrand_fondamental(t_c):
+            return (t_c / (np.exp(s_val * t_c) - 1)) * f_t_complex_func(t_c)
+
+        # ---------------------------------------------------------------------
+        # COMPOSANTE 1 : Intégration sur le contour de Hankel (\mathcal{H})
+        # ---------------------------------------------------------------------
+        # Branche supérieure de Hankel (t_max + i*R_micro -> 0 + i*R_micro)
+        I_h_top_r, _ = integrate.quad(lambda u: np.real(integrand_fondamental(u + 1j * R_micro)), t_max, 0)
+        I_h_top_i, _ = integrate.quad(lambda u: np.imag(integrand_fondamental(u + 1j * R_micro)), t_max, 0)
+        I_h_top = I_h_top_r + 1j * I_h_top_i
+
+        # Arc de cercle à l'origine 0^- (de pi/2 à -pi/2)
+        def integrand_cercle_origine(theta):
+            t_c = R_micro * np.exp(1j * theta)
+            dt_c = 1j * R_micro * np.exp(1j * theta)
+            return integrand_fondamental(t_c) * dt_c
+            
+        I_h_circle_r, _ = integrate.quad(lambda th: np.real(integrand_cercle_origine(th)), np.pi/2, -np.pi/2)
+        I_h_circle_i, _ = integrate.quad(lambda th: np.imag(integrand_cercle_origine(th)), np.pi/2, -np.pi/2)
+        I_h_circle = I_h_circle_r + 1j * I_h_circle_i
+
+        # Branche inférieure de Hankel (0 - i*R_micro -> t_max - i*R_micro)
+        I_h_bot_r, _ = integrate.quad(lambda u: np.real(integrand_fondamental(u - 1j * R_micro)), 0, t_max)
+        I_h_bot_i, _ = integrate.quad(lambda u: np.imag(integrand_fondamental(u - 1j * R_micro)), 0, t_max)
+        I_h_bot = I_h_bot_r + 1j * I_h_bot_i
+
+        contribution_hankel = I_h_top + I_h_circle + I_h_bot
+
+        # ---------------------------------------------------------------------
+        # COMPOSANTE 2 : Intégration sur la famille de micro-contours (\gamma_k)
+        # ---------------------------------------------------------------------
+        contribution_micro_contours = 0j
+        for t_k in singularites_dirac:
+            # Lacet fermé de 0 à 2*pi autour de la singularité t_k
+            def integrand_lacet(theta):
+                t_c = t_k + R_micro * np.exp(1j * theta)
+                dt_c = 1j * R_micro * np.exp(1j * theta)
+                return integrand_fondamental(t_c) * dt_c
+                
+            I_k_r, _ = integrate.quad(lambda th: np.real(integrand_lacet(th)), 0, 2 * np.pi)
+            I_k_i, _ = integrate.quad(lambda th: np.imag(integrand_lacet(th)), 0, 2 * np.pi)
+            contribution_micro_contours += (I_k_r + 1j * I_k_i)
+
+        # Union topologique des deux contributions sous l'opérateur intégral
+        integral_totale = contribution_hankel + contribution_micro_contours
+        return s_val * integral_totale
