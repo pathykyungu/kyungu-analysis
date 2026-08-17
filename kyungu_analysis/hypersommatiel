@@ -7,6 +7,9 @@ class KyunguHypersommatiel:
     Troisième Brique de l'Analyse Sommatielle (Professeur Pathy Kyungu Ngoïe).
     L'Hypersommatiel F,(s) ou [F],(s) est la dérivée du sommatiel de F(sx) en x=0.
     
+    Définition par la limite fondamentale officielle :
+    F,(s) = lim_{x -> 0} ( [F(sx)]_x / x )
+    
     Représentation intégrale officielle sur la variété topologique \Gamma :
     F,(s) = s * \int_{\Gamma} \frac{\mathcal{L}^{-1}{F}(t)}{e^{s t} - 1} t dt
     
@@ -18,25 +21,71 @@ class KyunguHypersommatiel:
     def __init__(self):
         pass
 
+    def compute_hypersommatiel_by_fundamental_limit(self, sommatiel_instance, f_t_func, s_val, h=1e-6):
+        """
+        Calcule l'Hypersommatiel F,(s) en appliquant directement votre définition 
+        par la limite fondamentale à partir du Sommatiel :
+        F,(s) = lim_{x -> 0} ( [F(sx)]_x / x )
+        
+        Parameters:
+            sommatiel_instance (KyunguSommatiel): Instance de la deuxième brique du package.
+            f_t_func (callable): Fonction évaluant \mathcal{L}^{-1}{F}(t).
+            s_val (float): Paramètre de dilatation s.
+            h (float): Pas fini pour l'approximation de la limite en x -> 0.
+        """
+        # Évaluation du Sommatiel dilaté [F(sx)]_x en x = h
+        sommatiel_h = sommatiel_instance.compute_sommatiel_numeric(f_t_func, x_val=h, s_val=s_val)
+        
+        # Application du rapport de votre limite fondamentale
+        return sommatiel_h / h
+
+    def compute_hypersommatiel_constant(self, C):
+        """
+        Théorème de base : L'hypersommatiel d'une constante C vaut C.
+        [C],(s) = C
+        """
+        return C
+
+    def compute_hypersommatiel_exponential_negative(self, s_val, a):
+        """
+        Cas de l'exponentielle décroissante (Génératrice des Bernoulli).
+        [e^{-as}],(s) = (a * s) / (e^{as} - 1)
+        """
+        if s_val == 0 or a == 0:
+            return 1.0
+        return (a * s_val) / (np.exp(a * s_val) - 1)
+
+    def compute_hypersommatiel_exponential_positive(self, s_val, a):
+        """
+        Cas de l'exponentielle croissante via prolongement sur \Gamma.
+        [e^{as}],(s) = (a * s * e^{as}) / (e^{as} - 1)
+        """
+        if s_val == 0 or a == 0:
+            return 1.0
+        exponentielle_terme = np.exp(a * s_val)
+        return (a * s_val * exponentielle_terme) / (exponentielle_terme - 1)
+
     def compute_hypersommatiel_sine(self, s_val, a):
         """
         Application directe de la formule intégrale sur la variété \Gamma pour sin(as).
-        L'évaluation donne de manière exacte et épurée :
         [\sin(as)],(s) = (a * s) / 2
         """
         return (a * s_val) / 2.0
+
+    def compute_hypersommatiel_cosine(self, s_val, a):
+        """
+        Application directe de la formule intégrale sur la variété \Gamma pour cos(as).
+        [\cos(as)],(s) = (a * s / 2) * cot(a * s / 2)
+        """
+        if s_val == 0 or a == 0:
+            return 1.0
+        angle = (a * s_val) / 2.0
+        return angle / np.tan(angle)
 
     def compute_hypersommatiel_on_variety(self, f_t_complex_func, s_val, singularites_dirac=None, R_micro=0.01, t_max=50):
         """
         Évalue l'Hypersommatiel dans le plan complexe en appliquant l'intégration 
         sur la variété topologique \Gamma = \mathcal{H} \cup \bigcup \gamma_k.
-        
-        Parameters:
-            f_t_complex_func (callable): Fonction holomorphe \mathcal{L}^{-1}{F}(t).
-            s_val (complex): Paramètre de dilatation.
-            singularites_dirac (list): Positions complexes t_k des singularités enveloppées par \gamma_k.
-            R_micro (float): Rayon d'isolement topologique pour \mathcal{H} et \gamma_k.
-            t_max (float): Borne de troncature pour le support de \mathcal{H}.
         """
         if singularites_dirac is None:
             singularites_dirac = []
@@ -47,12 +96,10 @@ class KyunguHypersommatiel:
         # ---------------------------------------------------------------------
         # COMPOSANTE 1 : Intégration sur le contour de Hankel (\mathcal{H})
         # ---------------------------------------------------------------------
-        # Branche supérieure de Hankel (t_max + i*R_micro -> 0 + i*R_micro)
         I_h_top_r, _ = integrate.quad(lambda u: np.real(integrand_fondamental(u + 1j * R_micro)), t_max, 0)
         I_h_top_i, _ = integrate.quad(lambda u: np.imag(integrand_fondamental(u + 1j * R_micro)), t_max, 0)
         I_h_top = I_h_top_r + 1j * I_h_top_i
 
-        # Arc de cercle à l'origine 0^- (de pi/2 à -pi/2)
         def integrand_cercle_origine(theta):
             t_c = R_micro * np.exp(1j * theta)
             dt_c = 1j * R_micro * np.exp(1j * theta)
@@ -62,7 +109,6 @@ class KyunguHypersommatiel:
         I_h_circle_i, _ = integrate.quad(lambda th: np.imag(integrand_cercle_origine(th)), np.pi/2, -np.pi/2)
         I_h_circle = I_h_circle_r + 1j * I_h_circle_i
 
-        # Branche inférieure de Hankel (0 - i*R_micro -> t_max - i*R_micro)
         I_h_bot_r, _ = integrate.quad(lambda u: np.real(integrand_fondamental(u - 1j * R_micro)), 0, t_max)
         I_h_bot_i, _ = integrate.quad(lambda u: np.imag(integrand_fondamental(u - 1j * R_micro)), 0, t_max)
         I_h_bot = I_h_bot_r + 1j * I_h_bot_i
@@ -74,7 +120,6 @@ class KyunguHypersommatiel:
         # ---------------------------------------------------------------------
         contribution_micro_contours = 0j
         for t_k in singularites_dirac:
-            # Lacet fermé de 0 à 2*pi autour de la singularité t_k
             def integrand_lacet(theta):
                 t_c = t_k + R_micro * np.exp(1j * theta)
                 dt_c = 1j * R_micro * np.exp(1j * theta)
@@ -84,6 +129,5 @@ class KyunguHypersommatiel:
             I_k_i, _ = integrate.quad(lambda th: np.imag(integrand_lacet(th)), 0, 2 * np.pi)
             contribution_micro_contours += (I_k_r + 1j * I_k_i)
 
-        # Union topologique des deux contributions sous l'opérateur intégral
         integral_totale = contribution_hankel + contribution_micro_contours
         return s_val * integral_totale
