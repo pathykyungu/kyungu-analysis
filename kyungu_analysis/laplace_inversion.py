@@ -115,12 +115,13 @@ class KyunguLaplaceInversion:
             if is_cosh_pattern:
                 a_detected = a_candidate
 
-        # Reconstruction finale du crochet unifié selon la condensation
+        # Reconstruction finale du crochet unifié selon la condensation circulaire exact
         if is_cosh_pattern and a_detected is not None:
             # Définition symbolique de l'opérateur d/dt au sens de Kyungu
             d_dt = sp.Symbol('d/dt')
-            op_cosh = sp.cosh(sp.sqrt(a_detected * d_dt))
-            crochet_unifie = op_cosh * sp.DiracDelta(t) + partie_reguliere
+            # CORRECTION : C'est le cosinus circulaire qui porte la série alternée (-1)^n
+            op_cos = sp.cos(sp.sqrt(a_detected * d_dt))
+            crochet_unifie = op_cos * sp.DiracDelta(t) + partie_reguliere
             forme_condensee_active = True
         else:
             # Construction standard si la série ne correspond pas à un cosh pur
