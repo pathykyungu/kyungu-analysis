@@ -4,7 +4,7 @@ class KyunguLaplaceInversion:
     """
     Première Brique de l'Analyse Sommatielle (Professeur Pathy Kyungu Ngoïe).
     Formule unifiée d'inversion de la transformée de Laplace au sens des distributions.
-    Version 12 (Corrigée avec enveloppe e^{bt} globale).
+    Version 12 (Corrigée avec enveloppe e^{bt} globale et condensation en cosh).
     """
     
     def __init__(self):
@@ -18,7 +18,6 @@ class KyunguLaplaceInversion:
         Développe phi(x) au voisinage de x = a sous la forme \sum c_k (x-a)^{\alpha_k}.
         Reconstruit l'inverse au sens des distributions sous l'enveloppe e^{bt}.
         """
-        # Note : Correction de l'argument 'Resource=True' qui n'existe pas dans SymPy
         x = sp.Symbol('x', positive=True)
         
         # 1. Construction de la fonction auxiliaire phi(x)
@@ -34,37 +33,37 @@ class KyunguLaplaceInversion:
         # 3. Extraction des coefficients c_k et exposants alpha_k
         termes = sp.Add.make_args(serie)
         
-        crochet_unifie = 0  # Contiendra la somme des 3 composantes avant multiplication par e^{bt}
+        crochet_unifie = 0  # Accumulateur des 3 composantes
+        partie_reguliere = 0
         termes_impulsionnels = [] 
         termes_distributionnels = [] 
         
+        # Dictionnaires pour stocker les coefficients par ordre de dérivation pour la condensation
+        coefficients_dirac = {}
+        
         for terme in termes:
-            # Isoler proprement le coefficient indépendant de (x-a)
-            # SymPy sépare le monôme par rapport à l'objet symbolique x
-            coeff = terme.as_independent(x)[0]
-            reste = terme.as_independent(x)[1]
+            # Séparation robuste du coefficient indépendant de x
+            coeff, reste = terme.as_coeff_mul(x)
             
-            if reste == 1: # Terme constant (alpha_k = 0)
+            if reste == (): # Terme constant (alpha_k = 0)
                 alpha_k = sp.Integer(0)
                 c_k = coeff
-            elif reste.is_Pow and (reste.base == (x - a) or reste.base == x):
-                alpha_k = reste.exp
-                c_k = coeff
-            elif reste == (x - a) or reste == x:
-                alpha_k = sp.Integer(1)
-                c_k = coeff
             else:
-                # Sécurité pour capturer les formes non-standardisées par SymPy
-                # Si la base est x mais décalée implicitement
-                alpha_k = sp.Symbol('alpha_temp')
-                c_k = terme
-                continue
+                expr_x = reste[0]
+                if expr_x.is_Pow and (expr_x.base == (x - a) or expr_x.base == x):
+                    alpha_k = expr_x.exp
+                    c_k = coeff
+                elif expr_x == (x - a) or expr_x == x:
+                    alpha_k = sp.Integer(1)
+                    c_k = coeff
+                else:
+                    continue
                 
-            # 4. Classification selon votre théorème maître (v12)
+            # 4. Classification selon le théorème maître (v12)
             
             # Cas 1 : Termes impulsionnels (alpha_k == 0) -> c_k * delta(t)
             if alpha_k == 0:
-                crochet_unifie += c_k * sp.DiracDelta(t)
+                coefficients_dirac[0] = c_k
                 termes_impulsionnels.append({
                     'coeff_analytique': c_k,
                     'expression_latex': f"{sp.latex(c_k)} \\cdot \\delta(t)"
@@ -74,7 +73,7 @@ class KyunguLaplaceInversion:
             elif alpha_k.is_integer and alpha_k < 0:
                 m = -int(alpha_k)
                 coeff_dist = c_k * (c ** (-m))
-                crochet_unifie += coeff_dist * sp.DiracDelta(t, m)
+                coefficients_dirac[m] = coeff_dist
                 termes_distributionnels.append({
                     'ordre_m': m,
                     'coeff_analytique': coeff_dist,
@@ -83,24 +82,90 @@ class KyunguLaplaceInversion:
                 
             # Cas 3 : Partie régulière (alpha_k non entier négatif ou nul)
             else:
-                # Formule maîtresse de la partie régulière au sein du crochet :
-                # (c_k * c^{\alpha_k} / Gamma(\alpha_k)) * t^{\alpha_k-1}
                 terme_reg = (c_k * (c ** alpha_k) / sp.gamma(alpha_k)) * (t ** (alpha_k - 1))
-                crochet_unifie += terme_reg
+                partie_reguliere += terme_reg
 
-        # RETOUCHE MAJEURE : Le facteur e^{bt} enveloppe l'intégralité du crochet unifié
+        # 5. Algorithme Avancé de Condensation Opératorielle (Reconnaissance cosh(sqrt(a * d/dt)))
+        # On vérifie si la structure des coefficients suit exactement (-1)^n * a^n / (2n)!
+        is_cosh_pattern = False
+        a_detected = None
+        
+        # Il faut au moins le terme d'ordre 0 et d'ordre 1 pour tenter l'identification de la signature
+        if 0 in coefficients_dirac and 1 in coefficients_dirac:
+            c0 = coefficients_dirac[0]
+            c1 = coefficients_dirac[1]
+            
+            # Si c0 = 1 et c1 = -a, alors le paramètre candidat de l'opérateur est a = -c1
+            a_candidate = -c1
+            
+            # Validation des termes d'ordres supérieurs présents
+            is_cosh_pattern = True
+            for m, coeff in coefficients_dirac.items():
+                if m % 2 == 1: # Les ordres impairs différents de 1 doivent être nuls dans cos(sqrt(ap))
+                    if m != 1 and coeff != 0:
+                        is_cosh_pattern = False
+                        break
+                else: # Les ordres pairs m = 2n doivent valoir c_2n = (-1)^n * a^n / (2n)!
+                    n = m // 2
+                    expected_coeff = ((-1)**n * (a_candidate**n)) / sp.factorial(2*n)
+                    if sp.simplify(coeff - expected_coeff) != 0:
+                        is_cosh_pattern = False
+                        break
+            
+            if is_cosh_pattern:
+                a_detected = a_candidate
+
+        # Reconstruction finale du crochet unifié selon la condensation
+        if is_cosh_pattern and a_detected is not None:
+            # Définition symbolique de l'opérateur d/dt au sens de Kyungu
+            d_dt = sp.Symbol('d/dt')
+            op_cosh = sp.cosh(sp.sqrt(a_detected * d_dt))
+            crochet_unifie = op_cosh * sp.DiracDelta(t) + partie_reguliere
+            forme_condensee_active = True
+        else:
+            # Construction standard si la série ne correspond pas à un cosh pur
+            for m, coeff in coefficients_dirac.items():
+                if m == 0:
+                    crochet_unifie += coeff * sp.DiracDelta(t)
+                else:
+                    crochet_unifie += coeff * sp.DiracDelta(t, m)
+            crochet_unifie += partie_reguliere
+            forme_condensee_active = False
+
+        # RETOUCHE MAJEURE (v12) : L'enveloppe e^{bt} globale
         solution_temporelle_finale = sp.exp(b * t) * crochet_unifie
 
         return {
-            'solution_complete': sp.simplify(solution_temporelle_finale),
-            'partie_reguliere_brute': sp.simplify(crochet_unifie), # sans l'enveloppe exp
+            'solution_complete': solution_temporelle_finale,
+            'partie_reguliere_brute': sp.simplify(partie_reguliere),
             'termes_impulsionnels': termes_impulsionnels,
-            'termes_distributionnels': termes_distributionnels
+            'termes_distributionnels': termes_distributionnels,
+            'forme_condensee_active': forme_condensee_active
         }
 
     def invert_laplace_simple(self, F_p, p, t, num_terms=6):
         """
-        Cas particulier (Section 2.1 & 2.3 de vos recherches) : phi(x) = F(1/x)
-        Développement autour de x = 0.
+        Cas particulier : phi(x) = F(1/x), développement autour de x = 0.
         """
         return self.invert_laplace_general(F_p, p, t, a=0, b=0, c=1, num_terms=num_terms)
+
+# =====================================================================
+# SCRIPT D'ÉVALUATION ET DE VÉRIFICATION SUR MACHINE
+# =====================================================================
+if __name__ == "__main__":
+    p, t = sp.symbols('p t', positive=True)
+    a_param = sp.Symbol('a', positive=True)
+    
+    inverser = KyunguLaplaceInversion()
+    
+    print("=" * 70)
+    print("VÉRIFICATION DU CAS : F(p) = cos(sqrt(a*p))")
+    print("=" * 70)
+    
+    F_cos = sp.cos(sp.sqrt(a_param * p))
+    # On pousse à 8 termes pour laisser l'algorithme analyser la suite topologique
+    resultat = inverser.invert_laplace_simple(F_cos, p, t, num_terms=8)
+    
+    print(f"[+] Forme condensée en cosh détectée ? : {resultat['forme_condensee_active']}")
+    print(f"[+] Solution Temporelle Unifiée Générée :\n    f(t) = {resultat['solution_complete']}")
+    print("=" * 70)
